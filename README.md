@@ -24,10 +24,13 @@ docker compose down --remove-orphans
 |viewer@hengshi.local|Drill2026!|只读/导出|核对规则及结果|
 
 ## 一天剧本
-09:00操作员登录；09:05核对hs-primary日志8100、hs-east日志8100、hs-west日志8098，任期均6；09:10创建shift-20261117剧本，允许损失0、新任期门槛7、主故障且已隔离；09:20提交晚班演练；09:25查看候选hs-east、新任期7、多数派2/2；09:30导出JSON；09:35运行“缺少隔离证明”案例，应阻断；09:40观察员复核但新增返回403；10:00管理员查看 /api/audits。
+09:00操作员登录；09:05核对hs-primary日志8100、hs-east日志8100、hs-west日志8098，任期均6；09:10创建shift-20261117剧本，允许损失0、新任期门槛7、主故障且已隔离；09:20提交晚班演练并设1小时截止时间；09:25查看候选hs-east、新任期7、多数派2/2；09:30导出JSON；09:35运行“缺少隔离证明”案例，应阻断；09:40观察员复核但新增返回403；09:45撤销一条不再需要的排队演练，名额立即归还；10:00管理员查看 /api/audits。
 
 ## 算法口径
 输入为入队时冻结的节点与剧本快照。法定票数 floor(配置投票节点数/2)+1；可达票扣除不可达/已隔离/本次故障主节点；候选必须可达、有投票权、非主、未隔离且落后量不超过允许日志损失。新任期=max(节点任期)+1。所有安全条件成立时按日志位置降序、节点名升序确定候选；缺少旧主fencing、票数不足、未触发故障、任期不足或无合格候选均阻断。空节点、零投票节点、多个主节点计算失败并保存原因。结果含输入SHA256与模型版本，可重复计算。不会伪造真实集群共识证据。
+
+## 队列治理
+最多20个活跃演练（queued+running）。排队或执行中均可撤销，撤销与超时立即归还名额；截止时间可按 ttl_seconds 或 deadline_at 设置，过期演练终结为 expired，迟到的计算不再发布结果。接纳经 queue_state 单行互斥串行化，并发接纳与回收不超额、不漏接；撤销重试幂等，不重复释放；completed/failed 结果保留且拒绝撤销（409）。worker 认领即落库并携带认领令牌，进程崩溃后未到期任务沿用冻结输入重新排队，过期任务终结；旧令牌的迟到发布被丢弃。页面可撤销并展示终态与原因，观察员只读。终态：completed/failed/canceled/expired；原因：completed/failed/user_cancel/deadline_expired。
 
 ## 工程
 |组件|技术|
@@ -36,10 +39,10 @@ docker compose down --remove-orphans
 |后端|Python3.11/FastAPI/SQLAlchemy/PyJWT|
 |任务|MySQL持久队列 + Redis worker互斥锁 + 心跳|
 |存储|MySQL8.0、Redis7|
-所有计算和权限检查在后端。JWT有效8小时，密码PBKDF2-SHA256 180000轮随机盐。20条待处理任务配额。审计保存业务写入动作；错误返回request-id。五服务均真实健康检查。
+所有计算和权限检查在后端。JWT有效8小时，密码PBKDF2-SHA256 180000轮随机盐。20条活跃任务配额，撤销/超时立即归还。审计保存业务写入动作；错误返回request-id。五服务均真实健康检查。
 
 目录：frontend/src/api、stores、types、components/common、hooks、pages、router、utils、constants；backend/src/routes、controllers、services、models、schemas、middlewares、utils、constants、config；backend/scripts；backend/migrations。本地开发：安装backend/requirements.txt并设DATABASE_URL、REDIS_URL、JWT_SECRET，再运行uvicorn；前端以Nginx代理/api/去除前缀。
 
 环境：COMPOSE_PROJECT_NAME控制隔离命名；FRONTEND_PORT/BACKEND_PORT/DB_PORT为端口；DB_PASSWORD为演示数据库密码；JWT_SECRET为签名密钥；SEED_DEMO=false关闭演示数据。命名卷db-data、redis-data、artifacts；reset时显式down -v删除数据。前端字体依赖Google Fonts，离线回退serif/sans-serif。模型是简化安全门禁，非完整Raft实现。MIT许可。
 
-枚举：角色在backend/src/constants/enums.py和frontend/src/constants/enums.js；任务状态同处定义，使用于models/entities.py、services/drill_service.py、worker.py、components/common/status.js；节点角色在schemas/node.py、pages/nodes.js。测试、截图与已知差异见批次test-artifacts/gb-4110/TESTING.md。
+枚举：角色在backend/src/constants/enums.py和frontend/src/constants/enums.js；任务状态与终态原因同处定义，使用于models/entities.py、services/drill_service.py、worker.py、components/common/status.js；节点角色在schemas/node.py、pages/nodes.js。测试：cd backend && pip install -r requirements.txt -r requirements-test.txt && pytest，覆盖满额竞争、撤销与完成撞车、领走后崩溃。测试、截图与已知差异见批次test-artifacts/gb-4110/TESTING.md。

@@ -4,7 +4,7 @@ from fastapi.responses import Response
 from src.config.database import get_db
 from src.middlewares.auth import current_user, writable
 from src.schemas.drill import DrillInput
-from src.services.drill_service import create_drill, list_drills, get_drill
+from src.services.drill_service import create_drill, list_drills, get_drill, cancel_drill
 from src.utils.serialize import record
 from src.controllers.actions import audit
 router = APIRouter()
@@ -17,6 +17,12 @@ def create(data: DrillInput, db=Depends(get_db), user=Depends(writable)):
     return record(obj)
 @router.get('/drills/{drill_id}')
 def detail(drill_id: int, db=Depends(get_db), user=Depends(current_user)): return record(get_drill(db, drill_id))
+@router.post('/drills/{drill_id}/cancel')
+def cancel(drill_id: int, db=Depends(get_db), user=Depends(writable)):
+    obj, changed = cancel_drill(db, drill_id)
+    if changed: audit(db, user, f'drill:cancel:{obj.id}')
+    db.commit()
+    return record(obj)
 @router.get('/drills/{drill_id}/export')
 def export(drill_id: int, db=Depends(get_db), user=Depends(current_user)):
     obj = get_drill(db, drill_id)

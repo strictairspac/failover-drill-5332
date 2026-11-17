@@ -1,13 +1,14 @@
 import os
 from sqlalchemy import select
 from src.config.database import Base, engine, Session
-from src.models.entities import User, Node, Scenario
+from src.models.entities import User, Node, Scenario, QueueState
 from src.utils.security import hash_password
 
 def seed():
     Base.metadata.create_all(engine)
     if os.getenv('SEED_DEMO','true').lower() != 'true': return
     with Session() as db:
+        if not db.get(QueueState, 1): db.add(QueueState(id=1))  # 队列接纳互斥行
         for role in ('admin','operator','viewer'):
             email = role + '@hengshi.local'
             if not db.scalar(select(User).where(User.email == email)):

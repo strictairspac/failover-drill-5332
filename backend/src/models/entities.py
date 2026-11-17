@@ -36,7 +36,16 @@ class Drill(Base):
     status: Mapped[str] = mapped_column(String(20), default='queued')
     snapshot: Mapped[dict] = mapped_column(JSON)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finish_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+class QueueState(Base):
+    # 单行互斥锁：接纳演练时在事务内锁定本行，串行化配额检查与入队
+    __tablename__ = 'queue_state'
+    id: Mapped[int] = mapped_column(primary_key=True)
 class Audit(Base):
     __tablename__ = 'audits'
     id: Mapped[int] = mapped_column(primary_key=True)
